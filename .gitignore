@@ -1,0 +1,4 @@
+.streamlit/
+*.csv
+.idea/
+__pycache__/
