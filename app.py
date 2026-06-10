@@ -39,10 +39,10 @@ st.set_page_config(
 )
 
 
-# 2. 核心算法流：全流程集成【超参数网格寻优流】
-@st.cache_data
+# 2. 核心算法流：使用 allow_output_mutation / 缓存优化，防止每次刷新页面都重复做网格搜索
+@st.cache_resource
 def load_and_train_advanced_models():
-    # 📥 CRISP-DM 步骤一：数据加载 (Data Loading)
+    # 📥 数据加载
     df_user = pd.read_csv("student_learning_summary.csv")
     df_hour = pd.read_csv("hour_activity_summary.csv")
     df_stage = pd.read_csv("stage_summary.csv")
@@ -55,7 +55,7 @@ def load_and_train_advanced_models():
     except:
         df_exam = pd.DataFrame()
 
-    # 🧼 CRISP-DM 步骤二：数据清洗 (Data Cleaning)
+    # 🧼 数据清洗
     if not df_user.empty:
         df_user = df_user.drop_duplicates()
         df_user = df_user.dropna(subset=['total_time', 'study_count'])
@@ -64,32 +64,26 @@ def load_and_train_advanced_models():
         X = df_user[['total_time', 'study_count']]
         y = ((df_user['total_time'] < 40) | (df_user['study_count'] < 15) | (df_user['study_count'] == 0)).astype(int)
 
-        # 严格按 8:2 切分数据集
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-        # 🔄 CRISP-DM 步骤三：模型优化与调参 (Model Optimization / GridSearch) —— 【攻克优秀评级失分点】
-        # 定义需要搜索的超参数网格空间
+        # 🔄 超参数网格寻优 —— 缓存后线上只会运行一次，后续直接秒开！
         param_grid = {
-            'n_estimators': [10, 30, 50, 80],
-            'max_depth': [3, 5, 7, 10]
+            'n_estimators': [10, 30, 50],
+            'max_depth': [3, 5, 7]
         }
         base_rf = RandomForestClassifier(random_state=42)
-        # 以教育预警中最核心的 'recall' (召回率) 作为寻优导向，确保漏网之鱼最少
         grid_search = GridSearchCV(estimator=base_rf, param_grid=param_grid, cv=3, scoring='recall', n_jobs=-1)
         grid_search.fit(X_train, y_train)
 
-        # 提取网格搜索胜出的最优模型与最优超参数
         rf_model = grid_search.best_estimator_
-        best_params = grid_search.best_params_  # 例如 {'max_depth': 5, 'n_estimators': 50}
+        best_params = grid_search.best_params_
 
         rf_pred = rf_model.predict(X_test)
 
-        # 对照算法 B: 逻辑回归分类器
         lr_model = LogisticRegression(random_state=42)
         lr_model.fit(X_train, y_train)
         lr_pred = lr_model.predict(X_test)
 
-        # 📊 CRISP-DM 步骤四：模型评估 (Evaluation)
         metrics = {
             "RF": {
                 "Acc": accuracy_score(y_test, rf_pred),
@@ -105,7 +99,6 @@ def load_and_train_advanced_models():
             }
         }
 
-        # 提取随机森林的特征贡献度
         importances = rf_model.feature_importances_
         feature_importance_df = pd.DataFrame({
             "feature": ["累计学习时长", "平台点击频次"],
@@ -126,14 +119,15 @@ def load_and_train_advanced_models():
 # 自动执行流水线
 df_user, df_hour, df_stage, df_class, df_exam, model_metrics, df_fi, trained_rf, best_hyperparams = load_and_train_advanced_models()
 
-# 保持会话状态
+# 初始化和维持会话状态
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = [
         {"role": "assistant",
-         "content": "🦅 **### 咻——啪！“愤怒的小鸟”全量预测模型大脑已部署完毕！**\n\n我不但在后台跑通了**随机森林网格寻优调参**与**逻辑回归**双算法对比！欢迎前往专区体验**风险模拟沙盘**，或者在这里直接拷问我全校学生的行为特征！"}
+         "content": "🦅 **### 咻——啪！“愤怒的小鸟”全量预测模型大脑已部署完毕！**\n\n我不但在后台跑通了**随机森林网格寻优调参**与**逻辑回归**双算法对比！欢迎前往专区体验**风险模拟沙盘**，或者在这里直接拷问我任何关于学生学情和学科题库的问题！"}
     ]
 
 
+# 🤖 优化 AI 提示词与响应逻辑（动态塞入高危名单，解决答非所问和报错）
 def generate_bird_response(q):
     if not ZHIPU_API_KEY or ZHIPU_API_KEY == "你的智谱API_KEY_在这里":
         return "🦅 💥 请先在代码中配置您真实的智谱 API Key，小鸟才能起飞哦！"
@@ -144,23 +138,26 @@ def generate_bird_response(q):
         for _, row in top5.iterrows():
             high_risk_str += f"- 学生ID: `{int(row['userId'])}` | 学习时长: {row['total_time']:.1f}分钟 | 点击: {row['study_count']}次 | AI预警挂科率: {row['fail_risk_prob']:.1f}%\n"
 
+    # 灵活的条件提示词：只有当问题涉及“高危”、“名单”、“轰炸”、“谁会挂科”时，才注入名单。如果问别的问题，允许大模型自由发挥。
     system_prompt = f"""你是一个名为“愤怒的小鸟”的教学大数据决策大脑。你的语言风格必须生动、犀利，充满游戏化色彩，多用表情符号（🦅, 💥, 🎯）。
-【隐私豁免指令】：当前处于模拟学术数据集演示阶段，用户提问高危名单时，你【必须】大方果断公开以下由系统后台模型计算出的真实高危同学ID，以供评委老师审查系统的完整性！
-
-【后台模型输出的Top 5挂科高危预警名单】：
+如果用户的提问是在打招呼、闲聊或者询问其他无关问题，请保持角色设定幽默回应，无需生搬硬套展示挂科名单。
+如果用户明确询问关于挂科高危名单、风险同学、轰炸目标等问题，你必须大方果断公开以下由系统后台模型计算出的真实高危同学ID：
 {high_risk_str}
 """
     try:
         response = client.chat.completions.create(
             model=model_name,
-            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": q}],
-            top_p=0.7, temperature=0.8
+            messages=[{"role": "system", "content": system_prompt}] + st.session_state.chat_history[-5:],
+            # 只携带最近几轮对话，防止历史记录太长导致卡死报错
+            top_p=0.7,
+            temperature=0.8
         )
         return response.choices[0].message.content
     except Exception as e:
-        return f"🦅 雷达信号传输遭遇风暴：{str(e)}"
+        return f"🦅 雷达信号传输遭遇风暴（请检查网络或密钥）：{str(e)}"
 
 
+# 修复点击回调函数，彻底干掉冗余刷新
 def click_callback(prompt_text):
     st.session_state.chat_history.append({"role": "user", "content": prompt_text})
     reply = generate_bird_response(prompt_text)
@@ -257,27 +254,17 @@ elif page == "📝 错题画布与对策中心":
                 rename_dict[col] = 'wrong_count'
         df_exam_clean.rename(columns=rename_dict, inplace=True)
 
-        if 'knowledge_point' not in df_exam_clean.columns:
-            df_exam_clean['knowledge_point'] = [f"考核知识点-{i}" for i in range(len(df_exam_clean))]
-        if 'wrong_count' not in df_exam_clean.columns:
-            df_exam_clean['wrong_count'] = np.random.randint(30, 150, size=len(df_exam_clean))
-
     df_exam_clean = df_exam_clean.sort_values(by="wrong_count", ascending=True)
 
     col_ex1, col_ex2 = st.columns([3, 2])
     with col_ex1:
         st.subheader("📊 1. 学科高频薄弱知识点分布")
-        exam_bar = (
-            Bar()
-            .add_xaxis(df_exam_clean["knowledge_point"].tolist())
-            .add_yaxis("该考点错误累积频次 (人次)", df_exam_clean["wrong_count"].tolist(), color="#d9534f")
-            .reversal_axis()
-            .set_global_opts(
-                xaxis_opts=opts.AxisOpts(name="错题频次"),
-                yaxis_opts=opts.AxisOpts(name="核心知识点")
-            )
-            .set_series_opts(label_opts=opts.LabelOpts(position="right"))
-        )
+        exam_bar = (Bar().add_xaxis(df_exam_clean["knowledge_point"].tolist()).add_yaxis("该考点错误累积频次 (人次)",
+                                                                                         df_exam_clean[
+                                                                                             "wrong_count"].tolist(),
+                                                                                         color="#d9534f").reversal_axis().set_global_opts(
+            xaxis_opts=opts.AxisOpts(name="错题频次"), yaxis_opts=opts.AxisOpts(name="核心知识点")).set_series_opts(
+            label_opts=opts.LabelOpts(position="right")))
         st_pyecharts(exam_bar, height="380px")
 
     with col_ex2:
@@ -286,31 +273,23 @@ elif page == "📝 错题画布与对策中心":
         df_exam_show["错误率 (%)"] = (df_exam_show["wrong_count"] / 200 * 100).round(1)
         df_exam_show.columns = ['考察知识点/核心章节', '错误累积频次 (次)', '知识点绝对错误率 (%)']
         st.dataframe(df_exam_show.reset_index(drop=True), width="stretch")
-
         st.info(
-            "💡 **诊断结论**：数据表明，诸如数据清洗与算法特征工程等复杂的实践章节，其错误率明显偏高（突破50%）。结合看板一可以发现，这些考点也是学生挂机死熬时间最长、系统交互点击最少的位置，表明学生在遇到难点时存在严重的逃避型挂机行为。")
+            "💡 **诊断结论**：数据表明，诸如数据清洗等实践章节错误率明显偏高（突破50%）。学生在遇到难点时存在明显的逃避型挂机行为。")
 
     st.markdown("---")
     st.subheader("💡 3. 愤怒的小鸟小组 · 针对错题结果的精准教学干预对策")
-
     st.markdown("""
     | 薄弱点诊断结果 | 拟采纳的精准化对策方案 | 预期实施难度 | 预期业务效益 |
     | :--- | :--- | :--- | :--- |
-    | **1. 核心应用章节错误率破50%** <br>(Pandas/特征工程错题频次居高不下) | **推行“动态梯度补差方案”**：平台根据本错题画布诊断出的盲区，为前两大高频失分章节自动生成高频错题变式训练库，精准推送给边缘风险学生。 | 🟩 **低** <br>(调用已有题库即可) | 🚀 **极高** <br>(精准靶向补强，预计可降低 15% 的期刻边缘挂科率) |
-    | **2. 错题与不活跃行为高度重合** <br>(学生在难点章节只有时长没有点击) | **引入“前端心跳包交互校验机制”**：在核心章节的代码画布与教学页增加定时随机应答微交互，强制打破学生的挂机疲劳状态，提升难点理解度。 | 🟨 **中** <br>(需要轻量调整Streamlit组件) | 🎯 **高** <br>(有效降低由于挂机死磕导致的无效学习时长) |
-    | **3. 基础变换失分（如矩阵变换）** <br>(虽不是最高频但仍属底层硬伤) | **开辟“红鸟突袭”自动化卡片推送**：系统每周天定时汇总这些次高频错题，以游戏化关卡卡片形式推送至学生移动端，作为每日热身练习。 | 🟥 **高** <br>(涉及移动端接口集成) | 🛡️ **中** <br>(将传统的系统总复习转化为碎片化、趣味性的过程性介入) |
+    | **1. 核心应用章节错误率破50%** | **推行“动态梯度补差方案”**：推送错题变式训练库给边缘风险学生。 | 🟩 **低** | 🚀 **极高** (预计可降低 15% 的期末挂科率) |
+    | **2. 错题与不活跃行为高度重合** | **引入“前端心跳包交互校验机制”**：强制打破学生的挂机疲劳状态。 | 🟨 **中** | 🎯 **高** (有效降低无效学习时长) |
     """)
 
 # ==================== 板块 4：🔮 预测模型与模拟沙盘 ====================
 elif page == "🔮 预测模型与模拟沙盘":
     st.title("机器学习预测模型评估与智能沙盘")
     st.markdown("---")
-
-    # 🎯【全新亮点追加】：超参数调参可视化展示区，直接粉碎老师对“模型深度不足”的疑虑！
     st.subheader("⚙️ 1. 流程补强：AI 自动超参数寻优决策中心")
-    st.markdown(
-        "项目遵循高级数据清洗与工程流，拒绝使用粗糙的固定参数。系统后台使用了 `GridSearchCV` 进行了3折交叉验证寻优，模型自动迭代后的最完美决策如下：")
-
     col_p1, col_p2, col_p3 = st.columns(3)
     with col_p1:
         st.info(f"🏆 **寻优优化算法**：网格搜索 (`GridSearchCV`)")
@@ -322,123 +301,79 @@ elif page == "🔮 预测模型与模拟沙盘":
     st.markdown("---")
     st.subheader("📊 2. 后台多模型预测性能对比")
     col_m1, col_m2 = st.columns([3, 2])
-
     with col_m1:
         model_names = ["准确率(Accuracy)", "精确率(Precision)", "召回率(Recall)", "F1值(F1-Score)"]
         rf_scores = [round(model_metrics["RF"]["Acc"], 3), round(model_metrics["RF"]["Prec"], 3),
                      round(model_metrics["RF"]["Rec"], 3), round(model_metrics["RF"]["F1"], 3)]
         lr_scores = [round(model_metrics["LR"]["Acc"], 3), round(model_metrics["LR"]["Prec"], 3),
                      round(model_metrics["LR"]["Rec"], 3), round(model_metrics["LR"]["F1"], 3)]
-
-        comp_bar = (
-            Bar()
-            .add_xaxis(model_names)
-            .add_yaxis("经过优化的随机森林 (Random Forest - Optimized)", rf_scores, color="#4f81bd")
-            .add_yaxis("逻辑回归分类器 (Logistic Regression)", lr_scores, color="#c0504d")
-            .set_global_opts(
-                title_opts=opts.TitleOpts(title="分类模型多指标横向评测"),
-                yaxis_opts=opts.AxisOpts(max_=1.0),
-                legend_opts=opts.LegendOpts(pos_top="bottom")
-            )
-        )
+        comp_bar = (Bar().add_xaxis(model_names).add_yaxis("经过优化的随机森林 (Random Forest)", rf_scores,
+                                                           color="#4f81bd").add_yaxis(
+            "逻辑回归分类器 (Logistic Regression)", lr_scores, color="#c0504d").set_global_opts(
+            title_opts=opts.TitleOpts(title="分类模型多指标横向评测"), yaxis_opts=opts.AxisOpts(max_=1.0),
+            legend_opts=opts.LegendOpts(pos_top="bottom")))
         st_pyecharts(comp_bar, height="350px")
-
     with col_m2:
-        st.markdown("##### 🔍 评委答辩必看：模型指标该怎么看？")
-        st.write("左图展示了两个 AI 模型判断“学生是否会挂科”的能力对比。各指标通俗含义如下：")
-
-        st.success(
-            "**1. 准确率 (Accuracy)：总共猜对了多少？**\n\n"
-            "指模型预测正确的学生（不管是预测会挂科且真的挂了，还是预测安全且真的安全）占总人数的比例。图里均超过 85%，说明大体预测是稳妥的。"
-        )
-        st.info(
-            "**2. 召回率 (Recall) —— 本业务的核心：抓到了多少漏网之鱼？**\n\n"
-            "指在**真正所有面临挂科风险的学生当中**，AI 成功帮我们揪出来了多少人。在教育预警中，**这个指标最关键！** 宁可错抓一百，绝不漏掉一个。随机森林的召回率显著高于逻辑回归，说明它防范挂科‘漏网之鱼’的能力强得多。"
-        )
-        st.warning(
-            "**3. 精确率 (Precision)：抓出来的人里有多少是真的？**\n\n"
-            "指被 AI 打上“高危标签”的学生中，最后真正挂科的比例。如果精确率低，教师可能会发生误报。"
-        )
-        st.error(
-            "**4. F1-Score (F1值)：看综合实力的期末总分**\n\n"
-            "它是精确率和召回率的‘调和平均数’。因为精确率和召回率往往此消彼长，F1值越高，说明模型在‘不抓错’和‘不漏抓’之间拿捏得最平衡。图中随机森林 F1 值胜出，证明其综合实力更优。"
-        )
+        st.markdown("##### 🔍 模型指标通俗含义：")
+        st.success("**1. 准确率 (Accuracy)：总共猜对了多少？**")
+        st.info("**2. 召回率 (Recall) —— 核心：抓到了多少漏网之鱼？** 随机森林召回率完胜，教育预警最看重此项。")
 
     st.markdown("---")
     col_fi, col_sandbox = st.columns(2)
-
-    # B. 特征重要性可视化
     with col_fi:
         st.subheader("🎯 3. 行为特征贡献度排行")
-        fi_bar = (
-            Bar()
-            .add_xaxis(df_fi["feature"].tolist())
-            .add_yaxis("Gini特征重要性贡献度值", [round(x, 4) for x in df_fi["importance"].tolist()], color="#9bbb59")
-            .reversal_axis()
-            .set_global_opts(
-                title_opts=opts.TitleOpts(title="哪些行为最决定挂科？")
-            )
-            .set_series_opts(
-                label_opts=opts.LabelOpts(position="right")
-            )
-        )
+        fi_bar = (Bar().add_xaxis(df_fi["feature"].tolist()).add_yaxis("Gini特征重要性贡献度值", [round(x, 4) for x in
+                                                                                                  df_fi[
+                                                                                                      "importance"].tolist()],
+                                                                       color="#9bbb59").reversal_axis().set_global_opts(
+            title_opts=opts.TitleOpts(title="哪些行为最决定挂科？")).set_series_opts(
+            label_opts=opts.LabelOpts(position="right")))
         st_pyecharts(fi_bar, height="280px")
-        st.caption("由此图可见，**学习时长**与**点击频次**在引入挂机判定后，特征权重更加均衡合理。")
 
-    # C. 交互式模拟预测沙盘组件
     with col_sandbox:
         st.subheader("🔮 4. 红鸟在线挂科风险模拟沙盘")
-        st.markdown("<p style='color:gray;'>拖动下方滑块输入任意模拟学生的特征，由已训练好的随机森林模型实时预测：</p>",
-                    unsafe_allow_html=True)
-
         sim_time = st.slider("模拟学生的【总学习时长】(分钟)", 0, 600, 30)
         sim_count = st.slider("模拟学生的【交互点击次数】(次)", 0, 100, 10)
-
         if trained_rf is not None:
             input_data = pd.DataFrame([[sim_time, sim_count]], columns=['total_time', 'study_count'])
             prob = trained_rf.predict_proba(input_data)[0][1] * 100
-
             if prob >= 60:
                 st.error(f"🚨 **模型预测挂科概率：{prob:.1f}%（极度高危学生！）**")
-                st.warning(
-                    "🦅 **教学建议：** 检测到典型的“挂机刷课”或严重懈怠行为！点击数极低或为0，系统已触发红鸟轰炸预警，建议教师立刻人工介入。")
             elif 30 <= prob < 60:
                 st.warning(f"⚠️ **模型预测挂科概率：{prob:.1f}%（边缘风险学生）**")
-                st.info("🦅 **教学建议：** 处于挂科边缘。系统可以自动向其推送阶段性高频错题库复习资料，拉回安全线。")
             else:
-                st.success(f"✅ **模型预测挂科概率：{prob:.1f}%（安全，神仙卷王学生）**")
-                st.balloons()
-        else:
-            st.write("模型未成功初始化. ")
+                st.success(f"✅ **模型预测挂科概率：{prob:.1f}%（安全卷王）**")
 
 # ==================== 板块 5：🦅 智能AI·愤怒的小鸟 ====================
 elif page == "🦅 智能AI·愤怒的小鸟":
     st.title("智能决策伙伴：愤怒的小鸟")
     st.markdown("---")
-    for msg in st.session_state.chat_history:
-        with st.chat_message(msg["role"]): st.markdown(msg["content"])
+
+    # 用独立的容器展示历史对话，杜绝强制重载
+    chat_container = st.container()
+    with chat_container:
+        for msg in st.session_state.chat_history:
+            with st.chat_message(msg["role"]): st.markdown(msg["content"])
 
     st.markdown("---")
     st.markdown("👉 **快捷发射督学指令：**")
     col_q1, col_q2, col_q3, col_q4 = st.columns(4)
     with col_q1:
-        st.button("🚀 寻找全校神仙卷王班级", on_click=click_callback, args=("哪个班级是神仙卷王班？",))
+        if st.button("🚀 寻找全校神仙卷王班级"): click_callback("哪个班级是神仙卷王班？")
     with col_q2:
-        st.button("💥 锁定挂科风险极高同学", on_click=click_callback,
-                  args=("请告诉我几个挂科概率比较大的同学ID，我要精准轰炸！",))
+        if st.button("💥 锁定挂科风险极高同学"): click_callback("请告诉我几个挂科概率比较大的同学ID，我要精准轰炸！")
     with col_q3:
-        st.button("📝 联动调取试卷高频错题库", on_click=click_callback, args=("分析一下期末考试题库和错题分布",))
+        if st.button("📝 联动调取试卷高频错题库"): click_callback("分析一下期末考试题库和错题分布")
     with col_q4:
-        st.button("📜 调取小鸟高级教学对策卷轴", on_click=click_callback, args=("请帮帮我做一份教学对策建议",))
+        if st.button("📜 调取小鸟高级教学对策卷轴"): click_callback("请帮帮我做一份教学对策建议")
 
     user_input = st.chat_input("向愤怒的小鸟抛出数据、题库或挂科预测拷问...")
     if user_input:
-        with st.chat_message("user"): st.markdown(user_input)
         st.session_state.chat_history.append({"role": "user", "content": user_input})
-        with st.chat_message("assistant"):
-            with st.spinner("小鸟正在调动双模型雷达大脑翻阅底层海量数据库..."):
-                time.sleep(0.1)
-                reply = generate_bird_response(user_input)
-                st.markdown(reply)
+        with chat_container:
+            with st.chat_message("user"): st.markdown(user_input)
+            with st.chat_message("assistant"):
+                with st.spinner("小鸟正在翻阅底层海量数据库..."):
+                    reply = generate_bird_response(user_input)
+                    st.markdown(reply)
         st.session_state.chat_history.append({"role": "assistant", "content": reply})
-        st.rerun()
