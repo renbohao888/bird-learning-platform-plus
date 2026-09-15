@@ -1,0 +1,163 @@
+{
+  "distribution": {
+    "student_count": 10095,
+    "mean_minutes": 1086.8,
+    "median_minutes": 256.7,
+    "p90_minutes": 3385.8,
+    "max_minutes": 25047.0,
+    "mean_over_median": 4.23,
+    "gini": 0.7274,
+    "zero_time_students": 114,
+    "zero_time_ratio": 0.0113
+  },
+  "pareto": {
+    "top_1%": 0.1088,
+    "top_5%": 0.3482,
+    "top_10%": 0.5374,
+    "top_20%": 0.7599
+  },
+  "hour": {
+    "peak_hours": [
+      8,
+      7,
+      12,
+      2
+    ],
+    "peak_active_count": 1014862,
+    "peak_ratio": 0.0812,
+    "top4_hours_cum_ratio": 0.3059,
+    "night_ratio_0_6": 0.313
+  },
+  "correlation": {
+    "pearson_time_actions": 0.9757,
+    "spearman_time_actions": 0.9865
+  },
+  "stage_structure": [
+    {
+      "stage_name": "5小时以上(沉浸)",
+      "student_count": 4778,
+      "student_ratio": 0.4733,
+      "avg_time": 2206.37,
+      "median_time": 1358.48,
+      "avg_actions": 2495.4,
+      "avg_minutes_per_action": 0.91
+    },
+    {
+      "stage_name": "1-5小时(深度)",
+      "student_count": 2496,
+      "student_ratio": 0.2473,
+      "avg_time": 153.4,
+      "median_time": 140.66,
+      "avg_actions": 195.2,
+      "avg_minutes_per_action": 0.9
+    },
+    {
+      "stage_name": "10-60分钟(中度)",
+      "student_count": 1374,
+      "student_ratio": 0.1361,
+      "avg_time": 31.15,
+      "median_time": 29.47,
+      "avg_actions": 50.4,
+      "avg_minutes_per_action": 0.75
+    },
+    {
+      "stage_name": "0-10分钟(轻度)",
+      "student_count": 1447,
+      "student_ratio": 0.1433,
+      "avg_time": 2.66,
+      "median_time": 1.2,
+      "avg_actions": 10.9,
+      "avg_minutes_per_action": 0.27
+    }
+  ],
+  "stage_validation": [
+    {
+      "stage_name": "5小时以上(沉浸)",
+      "official_count": 4778,
+      "computed_count": 4778,
+      "diff": 0,
+      "check_result": "PASS"
+    },
+    {
+      "stage_name": "1-5小时(深度)",
+      "official_count": 2496,
+      "computed_count": 2496,
+      "diff": 0,
+      "check_result": "PASS"
+    },
+    {
+      "stage_name": "0-10分钟(轻度)",
+      "official_count": 1447,
+      "computed_count": 1447,
+      "diff": 0,
+      "check_result": "PASS"
+    },
+    {
+      "stage_name": "10-60分钟(中度)",
+      "official_count": 1374,
+      "computed_count": 1374,
+      "diff": 0,
+      "check_result": "PASS"
+    },
+    {
+      "stage_name": "合计",
+      "official_count": 10095,
+      "computed_count": 10095,
+      "diff": 0,
+      "check_result": "PASS"
+    }
+  ],
+  "rule_replication": {
+    "note": "标签由 total_time / study_count 直接定义 → AUC≈1 属于标签泄漏，仅用于校验规则可复现性",
+    "risk_definition": "total_time < 40 分钟 或 study_count < 15 次",
+    "positive_ratio": 0.24,
+    "logistic_regression": {
+      "auc": 0.9983,
+      "accuracy": 0.9643,
+      "precision": 0.8775,
+      "recall": 0.9897,
+      "f1": 0.9302
+    },
+    "random_forest": {
+      "auc": 1.0,
+      "accuracy": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    }
+  },
+  "quality_prediction": {
+    "target": "avg_minutes_per_action < 全体中位数（单次学习质量偏低）",
+    "positive_ratio": 0.4923,
+    "logistic_regression": {
+      "auc": 0.9889,
+      "accuracy": 0.8301,
+      "precision": 0.7487,
+      "recall": 0.9859,
+      "f1": 0.8511
+    },
+    "random_forest": {
+      "auc": 0.9366,
+      "accuracy": 0.7781,
+      "precision": 0.9659,
+      "recall": 0.5694,
+      "f1": 0.7165
+    }
+  },
+  "risk_list": {
+    "rule_high_risk_count": 2423,
+    "rule_high_risk_ratio": 0.24,
+    "top10_user_ids": [
+      167623,
+      167688,
+      169699,
+      169640,
+      169621,
+      169558,
+      169374,
+      169257,
+      169240,
+      168705
+    ]
+  }
+}

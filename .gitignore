@@ -2,3 +2,10 @@
 *.csv
 .idea/
 __pycache__/
+
+# 环境变量（切勿提交）
+.env
+
+# 数仓产物（可本地重算生成）
+data/warehouse.db
+outputs/_*.txt

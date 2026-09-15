@@ -14,23 +14,19 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, recall_score, precision_score, f1_score
 
 # ==================== 智谱 AI 配置中心 ====================
+# 安全规范：密钥只从环境变量 / Streamlit secrets 读取，绝不在代码中硬编码。
+# 本地开发：复制 .env.example 为 .env 并填入 ZHIPU_API_KEY（.env 已被 .gitignore 忽略）
+# 线上部署：在 Streamlit Cloud 的 Secrets 中配置 ZHIPU_API_KEY
+import os
+
 try:
-    if "ZHIPU_API_KEY" in st.secrets:
-        ZHIPU_API_KEY = st.secrets["ZHIPU_API_KEY"]
-    else:
-        ZHIPU_API_KEY = "9afe16a699c844e3b2254fe3d97f33e7.q0z1i5qNtuao2RYs"
-except:
-    ZHIPU_API_KEY = "9afe16a699c844e3b2254fe3d97f33e7.q0z1i5qNtuao2RYs"
+    ZHIPU_API_KEY = st.secrets.get("ZHIPU_API_KEY", "")
+except Exception:
+    ZHIPU_API_KEY = ""
+ZHIPU_API_KEY = ZHIPU_API_KEY or os.getenv("ZHIPU_API_KEY", "")
 
 model_name = "glm-4-flash"
-
-try:
-    if ZHIPU_API_KEY and ZHIPU_API_KEY != "你的智谱API_KEY_在这里":
-        client = ZhipuAI(api_key=ZHIPU_API_KEY)
-    else:
-        client = None
-except Exception as e:
-    client = None
+client = ZhipuAI(api_key=ZHIPU_API_KEY) if ZHIPU_API_KEY else None
 # ========================================================
 
 st.set_page_config(
